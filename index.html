@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Color Field Gallery</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(to bottom, #f8f9fa 0%, #e9ecef 100%);
+            overflow-x: hidden;
+            cursor: grab;
+        }
+
+        body.grabbing {
+            cursor: grabbing;
+        }
+
+        .gallery-container {
+            perspective: 1200px;
+            perspective-origin: 50% 50%;
+            height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .gallery-space {
+            position: relative;
+            width: 4000px;
+            height: 100vh;
+            transform-style: preserve-3d;
+            transition: transform 0.5s ease-out;
+        }
+
+        .floor-hint {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(to right, transparent, rgba(0,0,0,0.05) 50%, transparent);
+            transform: translateZ(-100px) rotateX(85deg);
+        }
+
+        .painting {
+            position: absolute;
+            transform-style: preserve-3d;
+            transition: transform 0.3s ease;
+        }
+
+        .painting:hover {
+            transform: scale(1.02) translateZ(10px);
+        }
+
+        .painting:hover .painting-shadow {
+            opacity: 0.25;
+            filter: blur(25px);
+        }
+
+        .painting-frame {
+            position: relative;
+            background: white;
+            padding: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            cursor: pointer;
+        }
+
+        .painting-image {
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .painting-shadow {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) translateZ(-5px);
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(ellipse, rgba(0,0,0,0.15), transparent 70%);
+            opacity: 0.15;
+            filter: blur(20px);
+            transition: all 0.3s ease;
+            pointer-events: none;
+        }
+
+        /* Overlay */
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .overlay.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        .overlay-content {
+            max-width: 90vw;
+            max-height: 90vh;
+            position: relative;
+        }
+
+        .overlay-image {
+            max-width: 100%;
+            max-height: 85vh;
+            object-fit: contain;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+
+        .overlay-info {
+            color: white;
+            text-align: center;
+            margin-top: 20px;
+            font-size: 14px;
+            letter-spacing: 1px;
+            opacity: 0.8;
+        }
+
+        .overlay-title {
+            font-weight: 300;
+            font-size: 18px;
+            margin-bottom: 8px;
+        }
+
+        .overlay-details {
+            font-weight: 300;
+            font-size: 13px;
+            opacity: 0.6;
+        }
+
+        .close-btn {
+            position: absolute;
+            top: -40px;
+            right: 0;
+            background: none;
+            border: none;
+            color: white;
+            font-size: 28px;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+
+        .close-btn:hover {
+            opacity: 1;
+        }
+
+        /* Navigation hint */
+        .nav-hint {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(0,0,0,0.4);
+            font-size: 13px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* Loading placeholder */
+        .placeholder {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s ease-in-out infinite;
+        }
+
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="gallery-container">
+        <div class="gallery-space" id="gallerySpace">
+            <div class="floor-hint"></div>
+            <!-- Paintings will be inserted here -->
+        </div>
+    </div>
+
+    <div class="overlay" id="overlay">
+        <div class="overlay-content">
+            <button class="close-btn" onclick="closeOverlay()">×</button>
+            <img class="overlay-image" id="overlayImage" src="" alt="">
+            <div class="overlay-info">
+                <div class="overlay-title" id="overlayTitle"></div>
+                <div class="overlay-details" id="overlayDetails"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="nav-hint">Drag to explore gallery</div>
+
+    <script>
+        // CONFIGURATION - Edit your paintings here
+        const paintings = [
+            {
+                title: "Untitled I",
+                dimensions: "48 × 60 inches",
+                year: "2024",
+                imageUrl: "https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=800&h=1000&fit=crop", // Replace with your image
+                width: 400,
+                height: 500
+            },
+            {
+                title: "Untitled II",
+                dimensions: "60 × 48 inches",
+                year: "2024",
+                imageUrl: "https://images.unsplash.com/photo-1549887534-1541e9326642?w=1000&h=800&fit=crop",
+                width: 500,
+                height: 400
+            },
+            {
+                title: "Untitled III",
+                dimensions: "36 × 48 inches",
+                year: "2023",
+                imageUrl: "https://images.unsplash.com/photo-1547826039-bfc35e0f1ea8?w=800&h=1000&fit=crop",
+                width: 380,
+                height: 480
+            },
+            {
+                title: "Untitled IV",
+                dimensions: "48 × 48 inches",
+                year: "2024",
+                imageUrl: "https://images.unsplash.com/photo-1520839090488-4a6c211e2f94?w=900&h=900&fit=crop",
+                width: 450,
+                height: 450
+            },
+            {
+                title: "Untitled V",
+                dimensions: "40 × 52 inches",
+                year: "2023",
+                imageUrl: "https://images.unsplash.com/photo-1567359781514-3b964e2b04d6?w=800&h=1000&fit=crop",
+                width: 400,
+                height: 520
+            },
+            {
+                title: "Untitled VI",
+                dimensions: "54 × 40 inches",
+                year: "2024",
+                imageUrl: "https://images.unsplash.com/photo-1557672172-298e090bd0f1?w=1000&h=800&fit=crop",
+                width: 520,
+                height: 400
+            },
+            {
+                title: "Untitled VII",
+                dimensions: "48 × 60 inches",
+                year: "2024",
+                imageUrl: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&h=1000&fit=crop",
+                width: 400,
+                height: 500
+            }
+        ];
+
+        const gallerySpace = document.getElementById('gallerySpace');
+        let isDragging = false;
+        let startX = 0;
+        let scrollLeft = 0;
+
+        // Create paintings
+        paintings.forEach((painting, index) => {
+            const paintingEl = document.createElement('div');
+            paintingEl.className = 'painting';
+            
+            // Position paintings in a meandering gallery layout
+            const spacing = 600;
+            const xPos = index * spacing + 200;
+            const yPos = 200 + Math.sin(index * 0.7) * 100;
+            
+            paintingEl.style.left = `${xPos}px`;
+            paintingEl.style.top = `${yPos}px`;
+
+            paintingEl.innerHTML = `
+                <div class="painting-shadow"></div>
+                <div class="painting-frame" onclick="openOverlay(${index})">
+                    <img class="painting-image placeholder" 
+                         data-src="${painting.imageUrl}" 
+                         alt="${painting.title}"
+                         style="width: ${painting.width}px; height: ${painting.height}px;">
+                </div>
+            `;
+
+            gallerySpace.appendChild(paintingEl);
+        });
+
+        // Lazy load images
+        const imageObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const img = entry.target;
+                    img.src = img.dataset.src;
+                    img.onload = () => img.classList.remove('placeholder');
+                    imageObserver.unobserve(img);
+                }
+            });
+        });
+
+        document.querySelectorAll('.painting-image').forEach(img => {
+            imageObserver.observe(img);
+        });
+
+        // Gallery navigation
+        gallerySpace.addEventListener('mousedown', (e) => {
+            if (e.target.closest('.painting-frame')) return;
+            isDragging = true;
+            document.body.classList.add('grabbing');
+            startX = e.pageX;
+            const transform = gallerySpace.style.transform;
+            const match = transform.match(/translateX\(([-\d.]+)px\)/);
+            scrollLeft = match ? parseFloat(match[1]) : 0;
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            e.preventDefault();
+            const x = e.pageX;
+            const walk = (x - startX) * 1.5;
+            const newX = Math.min(100, Math.max(scrollLeft + walk, -3000));
+            gallerySpace.style.transform = `translateX(${newX}px)`;
+        });
+
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            document.body.classList.remove('grabbing');
+        });
+
+        // Touch support
+        let touchStartX = 0;
+        gallerySpace.addEventListener('touchstart', (e) => {
+            touchStartX = e.touches[0].pageX;
+            const transform = gallerySpace.style.transform;
+            const match = transform.match(/translateX\(([-\d.]+)px\)/);
+            scrollLeft = match ? parseFloat(match[1]) : 0;
+        });
+
+        gallerySpace.addEventListener('touchmove', (e) => {
+            const x = e.touches[0].pageX;
+            const walk = (x - touchStartX) * 1.5;
+            const newX = Math.min(100, Math.max(scrollLeft + walk, -3000));
+            gallerySpace.style.transform = `translateX(${newX}px)`;
+        });
+
+        // Overlay functions
+        function openOverlay(index) {
+            const painting = paintings[index];
+            document.getElementById('overlayImage').src = painting.imageUrl;
+            document.getElementById('overlayTitle').textContent = painting.title;
+            document.getElementById('overlayDetails').textContent = `${painting.dimensions} • ${painting.year}`;
+            document.getElementById('overlay').classList.add('active');
+        }
+
+        function closeOverlay() {
+            document.getElementById('overlay').classList.remove('active');
+        }
+
+        // Close overlay with Escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeOverlay();
+        });
+
+        // Close overlay when clicking outside image
+        document.getElementById('overlay').addEventListener('click', (e) => {
+            if (e.target.id === 'overlay') closeOverlay();
+        });
+    </script>
+</body>
+</html>
